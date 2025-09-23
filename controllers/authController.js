@@ -89,18 +89,17 @@ export const registerUser = async (req, res) => {
 // ---------------- VERIFY OTP ----------------
 export const verifyOtp = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { userId, otp } = req.body;
     
-    // Trim whitespace from email to handle newline characters
-    const trimmedEmail = email ? email.trim() : email;
-    
-    // Search for user with trimmed email or email with newline
-    const user = await User.findOne({ 
-      $or: [
-        { email: trimmedEmail },
-        { email: trimmedEmail + '\n' }
-      ]
-    });
+    // Validate required fields
+    if (!userId || !otp) {
+      return res.status(400).json({ 
+        message: "User ID and OTP are required" 
+      });
+    }
+
+    // Find user by ID
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const otpRecord = await Otp.findOne({ userId: user._id });
