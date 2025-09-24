@@ -103,7 +103,7 @@ export const verifyOtp = async (req, res) => {
     // Validate required fields
     if (!tempUserId || !otp) {
       return res.status(400).json({ 
-        message: "Temp User ID and OTP are required" 
+        message: "OTP is required" 
       });
     }
 
