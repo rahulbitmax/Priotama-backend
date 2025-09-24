@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import TempUser from "../models/TempUser.js";
 import Otp from "../models/Otp.js";
 import { sendOtp } from "../utils/sendOtp.js";
 
@@ -33,9 +34,17 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Check if user exists (by normalized email)
+    // Check if user already exists in User collection
     const userExists = await User.findOne({ email: normalizedEmail });
     if (userExists) return res.status(400).json({ message: "User already exists" });
+
+    // Check if user already exists in TempUser collection
+    const tempUserExists = await TempUser.findOne({ email: normalizedEmail });
+    if (tempUserExists) {
+      // Delete existing temp user and OTP
+      await TempUser.deleteOne({ email: normalizedEmail });
+      await Otp.deleteMany({ userId: tempUserExists._id });
+    }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -49,8 +58,8 @@ export const registerUser = async (req, res) => {
       };
     }
 
-    // Create user
-    const user = await User.create({
+    // Create temporary user (not in User collection yet)
+    const tempUser = await TempUser.create({
       name: sanitizedName,
       email: normalizedEmail,
       phone: normalizedPhone,
@@ -68,7 +77,7 @@ export const registerUser = async (req, res) => {
     const otpHash = await bcrypt.hash(otp, 10);
 
     await Otp.create({
-      userId: user._id,
+      userId: tempUser._id,
       otpHash,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // expires in 5 min
     });
@@ -78,7 +87,7 @@ export const registerUser = async (req, res) => {
 
     res.status(201).json({
       message: "OTP sent for verification",
-      userId: user._id,
+      tempUserId: tempUser._id,
       // No file path now; image is stored in DB
     });
   } catch (err) {
@@ -89,31 +98,68 @@ export const registerUser = async (req, res) => {
 // ---------------- VERIFY OTP ----------------
 export const verifyOtp = async (req, res) => {
   try {
-    const { userId, otp } = req.body;
+    const { tempUserId, otp } = req.body;
     
     // Validate required fields
-    if (!userId || !otp) {
+    if (!tempUserId || !otp) {
       return res.status(400).json({ 
-        message: "User ID and OTP are required" 
+        message: "Temp User ID and OTP are required" 
       });
     }
 
-    // Find user by ID
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    // Find temporary user by ID
+    const tempUser = await TempUser.findById(tempUserId);
+    if (!tempUser) return res.status(404).json({ message: "Temporary user not found or expired" });
 
-    const otpRecord = await Otp.findOne({ userId: user._id });
+    const otpRecord = await Otp.findOne({ userId: tempUser._id });
     if (!otpRecord) return res.status(400).json({ message: "OTP expired or not found" });
 
     const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
     if (!isMatch) return res.status(400).json({ message: "Invalid OTP" });
 
-    user.isVerified = true;
-    await user.save();
+    // Check if user already exists in User collection (double check)
+    const existingUser = await User.findOne({ email: tempUser.email });
+    if (existingUser) {
+      // Clean up temp data
+      await TempUser.deleteOne({ _id: tempUser._id });
+      await Otp.deleteMany({ userId: tempUser._id });
+      return res.status(400).json({ message: "User already exists" });
+    }
 
-    await Otp.deleteMany({ userId: user._id });
+    // Create actual user in User collection
+    const user = await User.create({
+      name: tempUser.name,
+      email: tempUser.email,
+      phone: tempUser.phone,
+      gender: tempUser.gender,
+      age: tempUser.age,
+      location: tempUser.location,
+      instaId: tempUser.instaId,
+      hobby: tempUser.hobby,
+      profilePic: tempUser.profilePic,
+      password: tempUser.password,
+      isVerified: true, // Set as verified since OTP is confirmed
+    });
 
-    res.json({ message: "Account Created Successfully" });
+    // Clean up temporary data
+    await TempUser.deleteOne({ _id: tempUser._id });
+    await Otp.deleteMany({ userId: tempUser._id });
+
+    res.json({ 
+      message: "Account Created Successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        gender: user.gender,
+        age: user.age,
+        location: user.location,
+        instaId: user.instaId,
+        hobby: user.hobby,
+        isVerified: user.isVerified
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
