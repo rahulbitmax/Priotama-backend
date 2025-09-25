@@ -3,6 +3,11 @@ import dotenv from "dotenv";
 dotenv.config();
 export const sendOtp = async (email, otp) => {
   try {
+    // Check if required environment variables are present
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      throw new Error("Email configuration missing: EMAIL_USER and EMAIL_PASS must be set in environment variables");
+    }
+
     const smtpSecure = process.env.SMTP_SECURE
       ? process.env.SMTP_SECURE === 'true'
       : true; // default to true for port 465
@@ -25,6 +30,7 @@ export const sendOtp = async (email, otp) => {
     });
 
   } catch (error) {
-    throw new Error("Email could not be sent");
+    console.error("Email sending error:", error);
+    throw new Error(`Email could not be sent: ${error.message}`);
   }
 };
