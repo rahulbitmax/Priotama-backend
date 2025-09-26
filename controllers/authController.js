@@ -34,29 +34,36 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Check if user already exists in User collection
-    const userExists = await User.findOne({ email: normalizedEmail });
-    if (userExists) return res.status(400).json({ message: "User already exists" });
+    // Check if user already exists in User collection (by email and phone)
+    const userExistsByEmail = await User.findOne({ email: normalizedEmail });
+    const userExistsByPhone = await User.findOne({ phone: normalizedPhone });
+    
+    if (userExistsByEmail && userExistsByPhone) {
+      return res.status(400).json({ message: "Email and phone number both already exist" });
+    } else if (userExistsByEmail) {
+      return res.status(400).json({ message: "Email already exists" });
+    } else if (userExistsByPhone) {
+      return res.status(400).json({ message: "Phone number already exists" });
+    }
 
-    // Check if user already exists in TempUser collection
-    const tempUserExists = await TempUser.findOne({ email: normalizedEmail });
-    if (tempUserExists) {
+    // Check if user already exists in TempUser collection (by email)
+    const tempUserExistsByEmail = await TempUser.findOne({ email: normalizedEmail });
+    if (tempUserExistsByEmail) {
       // Delete existing temp user and OTP
       await TempUser.deleteOne({ email: normalizedEmail });
-      await Otp.deleteMany({ userId: tempUserExists._id });
+      await Otp.deleteMany({ userId: tempUserExistsByEmail._id });
+    }
+
+    // Check if user already exists in TempUser collection (by phone)
+    const tempUserExistsByPhone = await TempUser.findOne({ phone: normalizedPhone });
+    if (tempUserExistsByPhone) {
+      // Delete existing temp user and OTP
+      await TempUser.deleteOne({ phone: normalizedPhone });
+      await Otp.deleteMany({ userId: tempUserExistsByPhone._id });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Handle profilePic from multer memory (req.file)
-    let profilePicDoc = undefined;
-    if (req.file) {
-      profilePicDoc = {
-        data: req.file.buffer,
-        contentType: req.file.mimetype,
-      };
-    }
 
     // Create temporary user (not in User collection yet)
     const tempUser = await TempUser.create({
@@ -68,7 +75,6 @@ export const registerUser = async (req, res) => {
       location,
       instaId: instald || instaId || undefined, // Use instald from form data, fallback to instaId, or undefined if empty
       hobby,
-      profilePic: profilePicDoc,
       password: hashedPassword,
     });
 
@@ -88,9 +94,23 @@ export const registerUser = async (req, res) => {
     res.status(201).json({
       message: "OTP sent for verification",
       tempUserId: tempUser._id,
-      // No file path now; image is stored in DB
     });
   } catch (err) {
+    // Handle MongoDB duplicate key errors
+    if (err.code === 11000) {
+      // Check which field caused the duplicate key error
+      if (err.keyPattern && err.keyPattern.phone && err.keyPattern.email) {
+        return res.status(400).json({ message: "Email and phone number both already exist" });
+      } else if (err.keyPattern && err.keyPattern.phone) {
+        return res.status(400).json({ message: "Phone number already exists" });
+      } else if (err.keyPattern && err.keyPattern.email) {
+        return res.status(400).json({ message: "Email already exists" });
+      } else {
+        return res.status(400).json({ message: "User with this information already exists" });
+      }
+    }
+    
+    // Handle other errors
     res.status(500).json({ message: err.message });
   }
 };
@@ -117,13 +137,25 @@ export const verifyOtp = async (req, res) => {
     const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
     if (!isMatch) return res.status(400).json({ message: "Invalid OTP" });
 
-    // Check if user already exists in User collection (double check)
-    const existingUser = await User.findOne({ email: tempUser.email });
-    if (existingUser) {
+    // Check if user already exists in User collection (double check by email and phone)
+    const existingUserByEmail = await User.findOne({ email: tempUser.email });
+    const existingUserByPhone = await User.findOne({ phone: tempUser.phone });
+    
+    if (existingUserByEmail && existingUserByPhone) {
       // Clean up temp data
       await TempUser.deleteOne({ _id: tempUser._id });
       await Otp.deleteMany({ userId: tempUser._id });
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ message: "Email and phone number both already exist" });
+    } else if (existingUserByEmail) {
+      // Clean up temp data
+      await TempUser.deleteOne({ _id: tempUser._id });
+      await Otp.deleteMany({ userId: tempUser._id });
+      return res.status(400).json({ message: "Email already exists" });
+    } else if (existingUserByPhone) {
+      // Clean up temp data
+      await TempUser.deleteOne({ _id: tempUser._id });
+      await Otp.deleteMany({ userId: tempUser._id });
+      return res.status(400).json({ message: "Phone number already exists" });
     }
 
     // Create actual user in User collection
@@ -136,7 +168,6 @@ export const verifyOtp = async (req, res) => {
       location: tempUser.location,
       instaId: tempUser.instaId,
       hobby: tempUser.hobby,
-      profilePic: tempUser.profilePic,
       password: tempUser.password,
       isVerified: true, // Set as verified since OTP is confirmed
     });
@@ -161,6 +192,21 @@ export const verifyOtp = async (req, res) => {
       }
     });
   } catch (err) {
+    // Handle MongoDB duplicate key errors
+    if (err.code === 11000) {
+      // Check which field caused the duplicate key error
+      if (err.keyPattern && err.keyPattern.phone && err.keyPattern.email) {
+        return res.status(400).json({ message: "Email and phone number both already exist" });
+      } else if (err.keyPattern && err.keyPattern.phone) {
+        return res.status(400).json({ message: "Phone number already exists" });
+      } else if (err.keyPattern && err.keyPattern.email) {
+        return res.status(400).json({ message: "Email already exists" });
+      } else {
+        return res.status(400).json({ message: "User with this information already exists" });
+      }
+    }
+    
+    // Handle other errors
     res.status(500).json({ message: err.message });
   }
 };
@@ -204,10 +250,6 @@ export const loginUser = async (req, res) => {
         location: user.location,
         instaId: user.instaId,
         hobby: user.hobby,
-        profilePic: user.profilePic ? {
-          data: user.profilePic.data.toString('base64'),
-          contentType: user.profilePic.contentType
-        } : null,
       },
     });
   } catch (err) {

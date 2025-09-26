@@ -20,7 +20,21 @@ export const sendOtp = async (email, otp) => {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
+      // Add timeout and connection settings for cloud deployment
+      connectionTimeout: 60000, // 60 seconds
+      greetingTimeout: 30000,   // 30 seconds
+      socketTimeout: 60000,     // 60 seconds
+      // Add TLS options for better compatibility
+      tls: {
+        rejectUnauthorized: false, // Allow self-signed certificates
+        ciphers: 'SSLv3'
+      }
     });
+
+    // Verify connection configuration
+    console.log("Verifying SMTP connection...");
+    await transporter.verify();
+    console.log("SMTP connection verified successfully");
 
     await transporter.sendMail({
       from: process.env.EMAIL_USER,

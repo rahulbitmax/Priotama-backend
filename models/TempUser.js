@@ -8,11 +8,6 @@ const tempUserSchema = new mongoose.Schema(
     location: { type: String },
     gender: { type: String, enum: ["Male", "Female"], required: true },
     age: { type: Number, required: true },
-    // Store image directly in MongoDB as binary Buffer with content type
-    profilePic: {
-      data: Buffer,
-      contentType: String,
-    },
     instaId: { type: String },
     hobby: { type: String },
     password: { type: String, required: true },
