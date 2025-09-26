@@ -65,6 +65,15 @@ export const registerUser = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Handle profilePic from multer memory (req.file)
+    let profilePicDoc = undefined;
+    if (req.file) {
+      profilePicDoc = {
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+      };
+    }
+
     // Create temporary user (not in User collection yet)
     const tempUser = await TempUser.create({
       name: sanitizedName,
@@ -75,6 +84,7 @@ export const registerUser = async (req, res) => {
       location,
       instaId: instald || instaId || undefined, // Use instald from form data, fallback to instaId, or undefined if empty
       hobby,
+      profilePic: profilePicDoc,
       password: hashedPassword,
     });
 
@@ -168,6 +178,7 @@ export const verifyOtp = async (req, res) => {
       location: tempUser.location,
       instaId: tempUser.instaId,
       hobby: tempUser.hobby,
+      profilePic: tempUser.profilePic,
       password: tempUser.password,
       isVerified: true, // Set as verified since OTP is confirmed
     });
@@ -188,6 +199,10 @@ export const verifyOtp = async (req, res) => {
         location: user.location,
         instaId: user.instaId,
         hobby: user.hobby,
+        profilePic: user.profilePic ? {
+          data: user.profilePic.data.toString('base64'),
+          contentType: user.profilePic.contentType
+        } : null,
         isVerified: user.isVerified
       }
     });
@@ -250,6 +265,10 @@ export const loginUser = async (req, res) => {
         location: user.location,
         instaId: user.instaId,
         hobby: user.hobby,
+        profilePic: user.profilePic ? {
+          data: user.profilePic.data.toString('base64'),
+          contentType: user.profilePic.contentType
+        } : null,
       },
     });
   } catch (err) {

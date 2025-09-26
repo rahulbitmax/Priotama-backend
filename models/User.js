@@ -10,7 +10,11 @@ const userSchema = new mongoose.Schema(
     age: { type: Number, required: true },
     instaId: { type: String },
     hobby: { type: String },
-
+    // Store image directly in MongoDB as binary Buffer with content type
+    profilePic: {
+      data: Buffer,
+      contentType: String,
+    },
     password: { type: String, required: true },
     isVerified: { type: Boolean, default: false },
     isBlocked: { type: Boolean, default: false },
