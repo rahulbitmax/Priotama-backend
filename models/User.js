@@ -14,8 +14,8 @@ const userSchema = new mongoose.Schema(
     instaId: { type: String }, // Only this field is optional
     // Store Cloudinary URL for profile picture
     profilePic: {
-      url: { type: String, required: true },
-      publicId: { type: String, required: true }, // Cloudinary public ID for deletion
+      url: { type: String, required: false },
+      publicId: { type: String, required: false }, // Cloudinary public ID for deletion
     },
     password: { type: String, required: true },
     isVerified: { type: Boolean, default: false },
