@@ -95,24 +95,31 @@ export const getAllUsers = async (req, res) => {
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get users with pagination only - select only required fields
+    // Get users with pagination - select all required fields
     const users = await User.find({})
-      .select('name age gender email phone location isBlocked')
+      .select('name email country state gender age instaId hobby phone profession isBlocked createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    // Transform users to match frontend table order: name, age, gender, email, phone, location, isBlocked
-    const transformedUsers = users.map(user => ({
-      _id: user._id,
-      name: user.name,
-      age: user.age,
-      gender: user.gender,
-      email: user.email,
-      phone: user.phone,
-      location: user.location,
-      isBlocked: user.isBlocked
-    }));
+    // Transform users with proper formatting
+    const transformedUsers = users.map(user => {
+      return {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        country: user.country,
+        gender: user.gender,
+        age: user.age,
+        instaId: user.instaId || '', // Handle null/undefined
+        hobby: user.hobby,
+        phone: user.phone, // "+91 7371832881" (combined format)
+        state: user.state,
+        profession: user.profession,
+        isBlocked: user.isBlocked,
+        createdAt: user.createdAt
+      };
+    });
 
     // Get total count for pagination
     const totalUsers = await User.countDocuments({});

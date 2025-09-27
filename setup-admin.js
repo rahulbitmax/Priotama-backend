@@ -10,7 +10,6 @@ async function setupAdmin() {
     try {
         // Connect to database
         await connectDB();
-        console.log("Connected to database");
 
         // Check if admin already exists
         const existingAdmin = await Admin.findOne({ email: "admin@priotama.com" });
@@ -31,7 +30,7 @@ async function setupAdmin() {
 
         console.log("Admin created successfully!");
         console.log("Email: admin@priotama.com");
-        console.log("Password: admin9703");
+        console.log("Password: admin123");
         console.log("Admin ID:", admin._id);
 
     } catch (error) {
@@ -39,9 +38,12 @@ async function setupAdmin() {
     } finally {
         // Close database connection
         await mongoose.connection.close();
-        console.log("Database connection closed");
     }
 }
 
-// Run the setup
-setupAdmin();
+// Only run if this file is executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+    setupAdmin();
+}
+
+export default setupAdmin;

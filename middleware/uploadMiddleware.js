@@ -3,12 +3,14 @@ import multer from "multer";
 // Configure multer for memory storage (to store files as Buffer in MongoDB)
 const storage = multer.memoryStorage();
 
-// File filter to only allow image files
+// File filter to only allow JPEG and PNG files
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+  
+  if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed!'), false);
+    cb(new Error('Only JPEG and PNG are allowed!'), false);
   }
 };
 
