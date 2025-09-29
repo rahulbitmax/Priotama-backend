@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     age: { type: Number, required: true },
     profession: { type: String, required: true, trim: true },
     hobby: { type: String, required: true, trim: true },
-    instaId: { type: String }, // Only this field is optional
+    instaId: { type: String, required: true, trim: true }, // Only this field is optional
     // Store Cloudinary URL for profile picture
     profilePic: {
       url: { type: String, required: true },
