@@ -147,14 +147,22 @@ export const getAllUsers = async (req, res) => {
 export const toggleUserBlock = async (req, res) => {
   try {
     const { userId } = req.params;
+    const { isBlocked } = req.body;
+
+    // Validate the isBlocked parameter
+    if (typeof isBlocked !== 'boolean') {
+      return res.status(400).json({ 
+        message: "isBlocked must be a boolean value (true or false)" 
+      });
+    }
 
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Toggle the current block status
-    user.isBlocked = !user.isBlocked;
+    // Set the block status based on the request body
+    user.isBlocked = isBlocked;
     await user.save();
 
     res.json({
