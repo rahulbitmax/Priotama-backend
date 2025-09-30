@@ -4,10 +4,15 @@ import User from "../models/User.js";
 import { sendOtp } from "../utils/sendOtp.js";
 import { uploadToCloudinary } from "../config/cloudinary.js";
 
-// Temporary storage for unverified users (in production, use Redis or database)
+const getPhoneVariations = (phone) => [
+  phone,
+  phone.replace(/\s/g, ''),
+  phone.replace(/\+/g, ''),
+  phone.replace(/\+|\s/g, ''),
+];
+
 const tempUserStorage = new Map();
 
-// Cleanup function to remove expired temporary data
 const cleanupExpiredData = () => {
   const now = new Date();
   for (const [tempId, data] of tempUserStorage.entries()) {
@@ -17,59 +22,62 @@ const cleanupExpiredData = () => {
   }
 };
 
-// Run cleanup every 5 minutes
 setInterval(cleanupExpiredData, 5 * 60 * 1000);
-
-// ---------------- REGISTER ----------------
 export const registerUser = async (req, res) => {
   try {
     const { name, email, country, state, code, phone, gender, age, profession, hobby, instaId, password, confirmPassword } = req.body;
     
-    // Validate required fields (all fields required except instaId)
-    if (!name || !email || !country || !state || !code || !phone || !gender || !age || !profession || !hobby || !password) {
+    if (!name || !email || !country || !state || !code || !phone || !gender || !age || !profession || !hobby || !instaId || !password) {
       return res.status(400).json({ 
-        message: " Only instaId is optional." 
+        message: "All fields are required." 
       });
     }
 
-    // Normalize name: collapse multiple spaces and trim
     const sanitizedName = name.replace(/\s+/g, ' ').trim();
-    
-    // Sanitize gender field - trim whitespace and ensure proper case
     const sanitizedGender = gender.trim();
-    
-    // Normalize email and phone
     const normalizedEmail = email.toLowerCase().trim();
-    const normalizedPhone = phone.trim();
-    const normalizedCode = code.trim();
+    const normalizedPhone = phone.replace(/\D/g, ''); // Remove all non-digits
+    const normalizedCode = code.replace(/\D/g, ''); // Remove all non-digits
     
-    // Format phone number with country code: "+91 7371832881"
-    const fullPhone = `${normalizedCode} ${normalizedPhone}`;
+    // Validate phone number format (8-15 digits)
+    if (normalizedPhone.length < 8 || normalizedPhone.length > 15) {
+      return res.status(400).json({ 
+        message: "Phone number must be between 8 to 15 digits" 
+      });
+    }
+    
+    // Format phone number consistently: "+91 7371832881"
+    const fullPhone = `+${normalizedCode} ${normalizedPhone}`;
 
-    // Validate gender
     if (!["Male", "Female"].includes(sanitizedGender)) {
       return res.status(400).json({ 
         message: "Invalid gender value. Must be 'Male' or 'Female'" 
       });
     }
 
-    // Validate age
-    if (isNaN(age) || age < 1 || age > 120) {
+    if (isNaN(age) || age < 18 || age > 100) {
       return res.status(400).json({ 
-        message: "Age must be a valid number between 1 and 120" 
+        message: "Age must be a valid number between 18 and 100" 
       });
     }
 
-    // Validate password confirmation
     if (password !== confirmPassword) {
       return res.status(400).json({ 
         message: "Passwords do not match" 
       });
     }
 
-    // Check if user already exists in User collection (by email and phone)
     const userExistsByEmail = await User.findOne({ email: normalizedEmail });
-    const userExistsByPhone = await User.findOne({ phone: fullPhone });
+    
+    const phoneVariations = [
+      ...getPhoneVariations(fullPhone),
+      normalizedPhone,
+      `${normalizedCode}${normalizedPhone}`,
+    ];
+    
+    const userExistsByPhone = await User.findOne({ 
+      phone: { $in: phoneVariations } 
+    });
     
     if (userExistsByEmail && userExistsByPhone) {
       return res.status(400).json({ message: "Email and phone number both already exist" });
@@ -79,58 +87,46 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Handle profilePic from Cloudinary (req.file) - now required
     if (!req.file) {
       return res.status(400).json({ 
         message: "Profile picture is required" 
       });
     }
     
-    // Check file size (500KB limit)
-    const maxSize = 500 * 1024; // 500KB in bytes
+    const maxSize = 500 * 1024;
     if (req.file.size > maxSize) {
       return res.status(400).json({ 
         message: "Maximum profile picture size is 500KB" 
       });
     }
     
-    // Store image buffer temporarily (don't upload to Cloudinary yet)
     const imageBuffer = req.file.buffer;
     const imageMimetype = req.file.mimetype;
-
-    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Generate temporary ID for this registration
     const tempId = Date.now().toString() + Math.random().toString(36).substring(2, 15);
 
-    // Store user data temporarily (expires in 10 minutes)
     const tempUserData = {
       name: sanitizedName,
       email: normalizedEmail,
-      phone: fullPhone, // Format: "+91 7371832881"
+      phone: fullPhone,
       country: country.trim(),
       state: state.trim(),
       gender: sanitizedGender,
       age: parseInt(age),
       profession: profession.trim(),
       hobby: hobby.trim(),
-      instaId: instaId || undefined, // Only this field is optional
-      imageBuffer: imageBuffer, // Store image buffer temporarily
-      imageMimetype: imageMimetype, // Store image mimetype
+      instaId: instaId.trim(),
+      imageBuffer: imageBuffer,
+      imageMimetype: imageMimetype,
       password: hashedPassword,
       otp: otp,
       createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
     };
 
-    // Store in temporary storage
     tempUserStorage.set(tempId, tempUserData);
-
-    // Send OTP via email
     await sendOtp(email, otp);
 
     res.status(201).json({
@@ -138,9 +134,7 @@ export const registerUser = async (req, res) => {
       tempId: tempId
     });
   } catch (err) {
-    // Handle MongoDB duplicate key errors
     if (err.code === 11000) {
-      // Check which field caused the duplicate key error
       if (err.keyPattern && err.keyPattern.phone && err.keyPattern.email) {
         return res.status(400).json({ message: "Email and phone number both already exist" });
       } else if (err.keyPattern && err.keyPattern.phone) {
@@ -152,12 +146,10 @@ export const registerUser = async (req, res) => {
       }
     }
     
-    // Handle other errors
     res.status(500).json({ message: err.message });
   }
 };
 
-// ---------------- VERIFY OTP ----------------
 export const verifyOtp = async (req, res) => {
   try {
     const { tempId, otp } = req.body;
@@ -191,9 +183,10 @@ export const verifyOtp = async (req, res) => {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
-    // Check if user already exists in database (double-check)
     const existingUserByEmail = await User.findOne({ email: tempUserData.email });
-    const existingUserByPhone = await User.findOne({ phone: tempUserData.phone });
+    const existingUserByPhone = await User.findOne({ 
+      phone: { $in: getPhoneVariations(tempUserData.phone) } 
+    });
     
     if (existingUserByEmail || existingUserByPhone) {
       tempUserStorage.delete(tempId);
@@ -259,7 +252,6 @@ export const verifyOtp = async (req, res) => {
   }
 };
 
-// ---------------- LOGIN ----------------
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -310,7 +302,6 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// ---------------- FORGOT PASSWORD ----------------
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -358,7 +349,6 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// ---------------- RESET PASSWORD ----------------
 export const resetPassword = async (req, res) => {
   try {
     const { otp, newPassword, confirmNewPassword } = req.body;
