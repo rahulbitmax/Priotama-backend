@@ -302,6 +302,9 @@ export const loginUser = async (req, res) => {
   }
 };
 
+// Temporary storage for password reset OTPs
+const resetOtpStorage = new Map();
+
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -331,18 +334,25 @@ export const forgotPassword = async (req, res) => {
       return res.status(403).json({ message: "User is blocked" });
     }
 
-    // Generate OTP (but don't store in database)
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Generate reset token
     const resetToken = jwt.sign({ userId: user._id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
-    // Send OTP via email (without storing in database)
+    // Store OTP temporarily with expiration (15 minutes)
+    resetOtpStorage.set(resetToken, {
+      otp: otp,
+      userId: user._id,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 minutes from now
+    });
+
+    // Send OTP via email
     await sendOtp(email, otp);
 
     res.json({
       message: "OTP sent to your email for password reset.",
-      resetToken: resetToken // Still return for frontend to store temporarily
+      resetToken: resetToken
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -376,6 +386,18 @@ export const resetPassword = async (req, res) => {
       return res.status(401).json({ message: "Invalid or expired reset token" });
     }
 
+    // Get stored OTP data
+    const resetOtpData = resetOtpStorage.get(resetToken);
+    if (!resetOtpData) {
+      return res.status(404).json({ message: "Reset session not found or expired" });
+    }
+
+    // Check if reset session has expired
+    if (new Date() > resetOtpData.expiresAt) {
+      resetOtpStorage.delete(resetToken);
+      return res.status(400).json({ message: "Reset session expired. Please request a new password reset." });
+    }
+
     // Find user by ID from token
     const user = await User.findById(decoded.userId);
     
@@ -386,6 +408,11 @@ export const resetPassword = async (req, res) => {
     // Validate OTP format
     if (!otp || !/^\d{6}$/.test(otp)) {
       return res.status(400).json({ message: "Invalid OTP format" });
+    }
+
+    // Verify OTP matches the one sent
+    if (resetOtpData.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP" });
     }
 
     // Check if new password is different from current password
@@ -402,6 +429,9 @@ export const resetPassword = async (req, res) => {
     // Update user password
     user.password = hashedPassword;
     await user.save();
+
+    // Clean up the reset session
+    resetOtpStorage.delete(resetToken);
 
     res.json({ message: "Password reset successfully" });
   } catch (err) {
